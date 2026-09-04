@@ -103,8 +103,8 @@ def get_dashboard_summary(batch_id: Optional[str] = None, db: Session = Depends(
         match_rate=round(match_rate, 2),
         resolution_rate=round(res_rate, 2),
         unresolved_exposure=batch_run.unresolved_exposure,
-        financial_accuracy=float(eval_res.financial_accuracy) if eval_res else 98.2,
-        value_weighted_accuracy=float(eval_res.value_weighted_accuracy) if eval_res else 98.2,
+        financial_accuracy=float(eval_res.financial_accuracy) if eval_res else round(float(batch_run.records_matched / max(batch_run.records_total, 1)) * 100, 2),
+        value_weighted_accuracy=float(eval_res.value_weighted_accuracy) if eval_res else round(match_rate, 2),
         throughput=float(batch_run.throughput_per_sec),
         critical_exceptions_count=critical_count,
         status_counts={
@@ -116,7 +116,15 @@ def get_dashboard_summary(batch_id: Optional[str] = None, db: Session = Depends(
         exposure_breakdown=FindTheMoneyResponse(
             total_exposure=total_exposure,
             categories=categories
-        )
+        ),
+        # Evaluation-enriched fields
+        match_accuracy=float(eval_res.match_accuracy) if eval_res else round(match_rate, 2),
+        total_volume=batch_run.total_value,
+        total_transactions=batch_run.records_total,
+        f1_score=float(eval_res.f1_score) if eval_res else None,
+        false_resolution_rate=float(eval_res.false_resolution_rate) if eval_res else 0.0,
+        exception_precision=float(eval_res.exception_precision) if eval_res else None,
+        exception_recall=float(eval_res.exception_recall) if eval_res else None,
     )
 
 @router.get("/find-the-money", response_model=FindTheMoneyResponse)

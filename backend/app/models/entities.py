@@ -237,6 +237,11 @@ class ExceptionRecord(Base):
     human_approval_required = Column(Boolean, default=False)
     human_approval_status = Column(String(50), default="PENDING") # PENDING, APPROVED, REJECTED
     
+    # Dispute Recovery Tracking
+    dispute_status = Column(String(50), default="NOT_DISPUTED") # NOT_DISPUTED, ESCALATED_TO_NODAL, RECOVERED, REJECTED
+    recovered_amount = Column(Numeric(15, 2), default=Decimal("0.00"))
+    dispute_reference = Column(String(128), nullable=True)
+
     evidence = Column(JSON, default=dict)
     created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.UTC))
 
@@ -317,3 +322,27 @@ class EvaluationResult(Base):
     evaluated_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.UTC))
 
     batch_run = relationship("BatchRun", back_populates="evaluation")
+
+
+class DynamicMatchingRule(Base):
+    __tablename__ = "dynamic_matching_rules"
+
+    id = Column(String(64), primary_key=True)
+    merchant_id = Column(String(64), ForeignKey("merchants.id"), nullable=True, index=True)
+    rule_name = Column(String(255), nullable=False)
+    rule_type = Column(String(100), nullable=False)  # CUSTOM_MDR_RATE, BANK_SETTLEMENT_WINDOW, REFUND_TIMING_TOLERANCE
+    description = Column(Text, nullable=False)
+
+    pattern_condition = Column(JSON, default=dict)  # e.g. {"merchant_id": "...", "custom_mdr_pct": 1.85, "payment_method": "UPI"}
+    proposed_action = Column(JSON, default=dict)
+
+    status = Column(String(50), default="SUGGESTED")  # SUGGESTED, ACTIVE, DISMISSED
+    confidence = Column(Numeric(5, 4), default=Decimal("0.9200"))
+    affected_records_count = Column(Integer, default=0)
+    saved_exposure_inr = Column(Numeric(15, 2), default=Decimal("0.00"))
+
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.UTC))
+    approved_at = Column(DateTime, nullable=True)
+
+    merchant = relationship("Merchant")
+

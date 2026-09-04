@@ -1,13 +1,17 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck,
   Zap,
   DollarSign,
   HelpCircle,
   ArrowUpRight,
+  Activity,
+  Target,
 } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis } from 'recharts';
 import { DashboardSummary, ExceptionItem } from '../types';
+import { LiveReconFeed } from '../components/ui/LiveReconFeed';
+
 
 interface DashboardProps {
   summary: DashboardSummary | null;
@@ -26,6 +30,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onSelectException,
   onNavigateToTab,
 }) => {
+  const [lastRefreshed, setLastRefreshed] = useState(new Date());
+
+  useEffect(() => {
+    setLastRefreshed(new Date());
+  }, [summary]);
+
   if (!summary || summary.total_records === 0) {
     return (
       <div style={{ textAlign: 'center', padding: '80px 20px' }}>
@@ -83,26 +93,48 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </p>
         </div>
 
-        <button
-          onClick={onOpenFindTheMoney}
-          className="btn"
-          style={{
-            background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
-            color: '#FFFFFF',
-            padding: '12px 22px',
-            fontSize: '14.5px',
-            fontWeight: 800,
-            boxShadow: '0 4px 12px rgba(5, 150, 105, 0.25)',
-          }}
-        >
-          <DollarSign size={18} />
-          <span>FIND THE MONEY: ₹{(summary.unresolved_exposure / 100000).toFixed(2)}L Risk</span>
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10B981', display: 'inline-block', animation: 'pulse 2s infinite' }} />
+            Updated {lastRefreshed.toLocaleTimeString()}
+          </div>
+          <button
+            onClick={onOpenFindTheMoney}
+            className="btn"
+            style={{
+              background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+              color: '#FFFFFF',
+              padding: '12px 22px',
+              fontSize: '14.5px',
+              fontWeight: 800,
+              boxShadow: '0 4px 12px rgba(5, 150, 105, 0.25)',
+            }}
+          >
+            <DollarSign size={18} />
+            <span>FIND THE MONEY: ₹{(summary.unresolved_exposure / 100000).toFixed(2)}L Risk</span>
+          </button>
+        </div>
       </div>
 
-      {/* KPI Cards Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
-        {/* Total Processed */}
+      {/* KPI Cards Grid — 5 cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '16px' }}>
+        {/* Match Accuracy — PRIMARY KPI */}
+        <div className="metric-card" style={{ borderColor: '#A5F3FC', background: 'linear-gradient(135deg, #F0FDFF 0%, #E0F2FE 100%)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: '#0369A1', textTransform: 'uppercase' }}>
+              Match Accuracy
+            </span>
+            <Target size={15} color="#0369A1" />
+          </div>
+          <div style={{ fontSize: '28px', fontWeight: 800, color: '#0C4A6E', marginTop: '6px' }}>
+            {(summary.match_accuracy ?? summary.match_rate).toFixed(2)}%
+          </div>
+          <div style={{ fontSize: '11px', color: '#0369A1', marginTop: '4px' }}>
+            {summary.f1_score != null ? `F1 Score: ${summary.f1_score.toFixed(2)}%` : `Match rate: ${summary.match_rate.toFixed(1)}%`}
+          </div>
+        </div>
+
+        {/* Total Volume */}
         <div className="metric-card">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
@@ -172,7 +204,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>rec/s</span>
           </div>
           <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-            Runtime benchmark (L1-L4 engine)
+            {summary.false_resolution_rate != null ? `False Resolution: ${summary.false_resolution_rate.toFixed(2)}%` : 'Runtime benchmark (L1-L4 engine)'}
           </div>
         </div>
       </div>
@@ -231,8 +263,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
+      {/* Live Razorpay Webhook Feed */}
+      <LiveReconFeed onSelectTransaction={(id) => onSelectException(id)} />
+
       {/* Critical Exceptions Table */}
       <div className="glass-card">
+
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
           <div>
             <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#0F172A' }}>High-Exposure Exceptions Requiring Review</h3>

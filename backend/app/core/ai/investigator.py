@@ -36,19 +36,20 @@ class AIInvestigator:
             "search_invoice"
         ]
 
-        payment_data = FinanceInvestigationTools.search_payment(db, payment.transaction_id)
-        settlements_data = FinanceInvestigationTools.search_settlement(db, payment.transaction_id)
-        fees_data = FinanceInvestigationTools.search_fee(db, payment.transaction_id)
-        refunds_data = FinanceInvestigationTools.search_refund(db, payment.transaction_id)
+        payment_data = FinanceInvestigationTools.search_payment(db, payment.transaction_id, dataset_id=payment.dataset_id)
+        settlements_data = FinanceInvestigationTools.search_settlement(db, payment.transaction_id, dataset_id=payment.dataset_id)
+        fees_data = FinanceInvestigationTools.search_fee(db, payment.transaction_id, dataset_id=payment.dataset_id)
+        refunds_data = FinanceInvestigationTools.search_refund(db, payment.transaction_id, dataset_id=payment.dataset_id)
         
         bank_data = []
         if payment.payment_reference:
-            bank_data = FinanceInvestigationTools.search_bank(db, payment.payment_reference)
+            bank_data = FinanceInvestigationTools.search_bank(db, payment.payment_reference, dataset_id=payment.dataset_id)
         for s in settlements_data:
             if s.get("bank_reference"):
-                bank_data.extend(FinanceInvestigationTools.search_bank(db, s["bank_reference"]))
+                bank_data.extend(FinanceInvestigationTools.search_bank(db, s["bank_reference"], dataset_id=payment.dataset_id))
 
-        invoices_data = FinanceInvestigationTools.search_invoice(db, payment.transaction_id)
+        invoices_data = FinanceInvestigationTools.search_invoice(db, payment.transaction_id, dataset_id=payment.dataset_id)
+
 
         tools_payload = {
             "payment": payment_data,

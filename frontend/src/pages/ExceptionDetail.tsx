@@ -10,9 +10,11 @@ import {
   Database,
   Calculator,
   UserCheck,
+  FileDown,
 } from 'lucide-react';
 import { ExceptionDetail } from '../types';
 import { apiService } from '../api/client';
+import { DisputeNoticeModal } from '../components/ui/DisputeNoticeModal';
 
 interface ExceptionDetailProps {
   exceptionId: string;
@@ -28,8 +30,10 @@ export const ExceptionDetailView: React.FC<ExceptionDetailProps> = ({
   const [detail, setDetail] = useState<ExceptionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [investigating, setInvestigating] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [notes, setNotes] = useState('');
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [isDisputeModalOpen, setIsDisputeModalOpen] = useState(false);
 
   const fetchDetail = () => {
     setLoading(true);
@@ -43,6 +47,17 @@ export const ExceptionDetailView: React.FC<ExceptionDetailProps> = ({
   useEffect(() => {
     fetchDetail();
   }, [exceptionId]);
+
+  const handleDownloadPdf = async () => {
+    setDownloadingPdf(true);
+    try {
+      await apiService.downloadExceptionPdf(exceptionId);
+    } catch (err) {
+      console.error('PDF download failed', err);
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   const handleRunInvestigation = async () => {
     setInvestigating(true);
@@ -82,21 +97,64 @@ export const ExceptionDetailView: React.FC<ExceptionDetailProps> = ({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Back Button & Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
         <button onClick={onBack} className="btn btn-secondary" style={{ padding: '8px 14px' }}>
           <ArrowLeft size={16} />
           <span>Back to Exceptions</span>
         </button>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button
+            onClick={() => setIsDisputeModalOpen(true)}
+            className="btn btn-secondary"
+            style={{
+              padding: '8px 14px',
+              fontSize: '13px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              color: '#B91C1C',
+              borderColor: '#FECACA',
+              background: '#FEF2F2',
+            }}
+            title="Generate formal bank & gateway dispute escalation notice"
+          >
+            <ShieldAlert size={16} color="#DC2626" />
+            <span>Escalate & Dispute</span>
+          </button>
+
+          <button
+            onClick={handleDownloadPdf}
+            disabled={downloadingPdf}
+            className="btn btn-primary"
+            style={{ padding: '8px 14px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
+            title="Download audit-ready PDF evidence report"
+          >
+            <FileDown size={16} />
+            <span>{downloadingPdf ? 'Generating PDF...' : 'Download Evidence PDF'}</span>
+          </button>
+
           <span className={`badge ${detail.severity === 'CRITICAL' ? 'badge-critical' : 'badge-warning'}`}>
             Severity: {detail.severity}
           </span>
           <span className={`badge ${detail.status === 'RESOLVED' ? 'badge-matched' : 'badge-neutral'}`}>
             Status: {detail.status}
           </span>
+          {detail.dispute_status && (
+            <span
+              className="badge"
+              style={{
+                background: detail.dispute_status === 'SETTLED_RECOVERED' ? '#DCFCE7' : detail.dispute_status === 'ESCALATED_TO_GATEWAY' ? '#FEF3C7' : '#E0E7FF',
+                color: detail.dispute_status === 'SETTLED_RECOVERED' ? '#166534' : detail.dispute_status === 'ESCALATED_TO_GATEWAY' ? '#92400E' : '#3730A3',
+                fontWeight: 700,
+              }}
+            >
+              Dispute: {detail.dispute_status}
+            </span>
+          )}
         </div>
       </div>
+
 
       {actionSuccess && (
         <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-border)', padding: '12px 16px', borderRadius: '8px', color: '#059669', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', fontWeight: 600 }}>
@@ -307,9 +365,13 @@ export const ExceptionDetailView: React.FC<ExceptionDetailProps> = ({
           </div>
 
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-            <button onClick={() => handleHumanApproval('REJECTED')} className="btn btn-danger">
+            <button onClick={() => setIsDisputeModalOpen(true)} className="btn btn-danger">
+              <ShieldAlert size={16} />
+              <span>Escalate & Dispute Notice</span>
+            </button>
+            <button onClick={() => handleHumanApproval('REJECTED')} className="btn btn-secondary">
               <XCircle size={16} />
-              <span>Reject / Dispute with Gateway</span>
+              <span>Mark Unresolvable</span>
             </button>
             <button onClick={() => handleHumanApproval('APPROVED')} className="btn btn-success">
               <CheckCircle2 size={16} />
@@ -318,6 +380,17 @@ export const ExceptionDetailView: React.FC<ExceptionDetailProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Dispute Notice Modal */}
+      <DisputeNoticeModal
+        isOpen={isDisputeModalOpen}
+        onClose={() => setIsDisputeModalOpen(false)}
+        exceptionId={exceptionId}
+        onStatusUpdated={() => {
+          fetchDetail();
+          onRefresh();
+        }}
+      />
     </div>
   );
 };

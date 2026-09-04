@@ -18,17 +18,28 @@ class FinancialAccountant:
         fee_total = Decimal("0.00")
         tax_total = Decimal("0.00")
         
+        # Track settlement-captured fee transaction IDs to avoid double-counting
+        settlement_captured_txn_ids = set()
+        
         # Calculate from settlements
         for s in settlements:
             settlement_total += s.net_amount
             fee_total += s.fee_amount
             tax_total += s.tax_amount
+            # Mark this settlement's transaction as already having fee captured
+            if s.transaction_id:
+                settlement_captured_txn_ids.add(s.transaction_id)
+            if s.payment_id:
+                settlement_captured_txn_ids.add(s.payment_id)
 
-        # Add separate fee line items if not included in settlement
+        # Add separate fee line items only if NOT already captured via settlement
         for f in fees:
-            # Check if this fee was already accounted in settlement.fee_amount
-            # If settlement fee was 0, count this fee
-            if fee_total == Decimal("0.00"):
+            fee_txn_id = getattr(f, 'transaction_id', None) or getattr(f, 'payment_id', None)
+            if fee_txn_id and fee_txn_id not in settlement_captured_txn_ids:
+                fee_total += f.base_amount
+                tax_total += f.tax_amount
+            elif fee_txn_id is None:
+                # Orphan fee record with no transaction link — always include
                 fee_total += f.base_amount
                 tax_total += f.tax_amount
 

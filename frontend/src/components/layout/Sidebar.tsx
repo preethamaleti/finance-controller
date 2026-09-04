@@ -8,6 +8,7 @@ import {
   History,
   Coins,
   ShieldCheck,
+  Store,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -33,11 +34,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badge: unresolvedCount > 0 ? unresolvedCount : undefined,
       badgeColor: criticalCount > 0 ? 'bg-red-500' : 'bg-amber-500',
     },
+    { id: 'merchants', label: 'Merchant Health', icon: Store },
     { id: 'copilot', label: 'Finance Copilot', icon: Bot, isAi: true },
     { id: 'evaluation', label: 'Batch Evaluation', icon: BarChart3, highlight: true },
     { id: 'cash', label: 'Cash & Forecasting', icon: Coins },
     { id: 'audit', label: 'Audit Trail', icon: History },
   ];
+
 
   return (
     <aside className="sidebar">

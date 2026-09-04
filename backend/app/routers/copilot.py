@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import Dict, Any, List
 
 from app.database import get_db
-from app.models.entities import BatchRun, ExceptionRecord, Payment, Merchant, Investigation
+from app.models.entities import BatchRun, ExceptionRecord, Payment, Merchant, Investigation, AuditLog
 from app.schemas.schemas import CopilotQueryRequest, CopilotQueryResponse
 from app.core.ai.provider import get_llm_provider
 from app.core.ai.tools import FinanceInvestigationTools
@@ -81,6 +81,87 @@ def query_copilot(req: CopilotQueryRequest, db: Session = Depends(get_db)):
         if highest_exc_data:
             citations.append(f"Transaction {highest_exc_data['transaction_id']}")
 
+    # Agentic Action Execution Parser
+    action_result = None
+    q_lower = req.query.lower().strip()
+    
+    # 1. Bulk Approve Action
+    if "approve all fee mismatches" in q_lower or ("approve" in q_lower and "fee mismatch" in q_lower):
+        if batch_run:
+            fee_excs = db.query(ExceptionRecord).filter(
+                ExceptionRecord.batch_id == batch_run.id,
+                ExceptionRecord.exception_type == "FEE_MISMATCH",
+                ExceptionRecord.status.in_(["OPEN", "UNRESOLVED", "INVESTIGATING"])
+            ).all()
+            
+            approved_count = 0
+            total_approved_val = 0.0
+            for e in fee_excs:
+                e.status = "APPROVED"
+                e.human_approval_status = "APPROVED"
+                approved_count += 1
+                total_approved_val += float(e.financial_exposure)
+                
+                db.add(AuditLog(
+                    id=f"aud_agent_{e.id}",
+                    batch_id=batch_run.id,
+                    exception_id=e.id,
+                    event_type="AGENTIC_ACTION_EXECUTION",
+                    decision="APPROVED",
+                    evidence={"action": "BULK_APPROVE_FEE_MISMATCH", "invoked_by": "Copilot Agent"},
+                    tools_called=["bulk_approve_exceptions"],
+                    action_taken=f"Copilot AI Agent bulk-approved Fee Mismatch exception with exposure ₹{float(e.financial_exposure):.2f}",
+                    user_id="Copilot AI Agent"
+                ))
+            
+            db.commit()
+            action_result = {
+                "action_executed": "BULK_APPROVE_EXCEPTIONS",
+                "target": "FEE_MISMATCH",
+                "affected_count": approved_count,
+                "total_amount_approved": total_approved_val,
+                "status": "COMPLETED",
+                "message": f"Successfully approved {approved_count} Fee Mismatch exceptions totaling ₹{total_approved_val:,.2f} with immutable audit logs."
+            }
+            tools_used.append({"tool": "bulk_approve_exceptions", "count": approved_count})
+            citations.append("Action: Bulk Approval Completed")
+
+    # 2. Escalate Action
+    elif "escalate" in q_lower and ("critical" in q_lower or "unresolved" in q_lower or "exceptions" in q_lower):
+        if batch_run:
+            crit_excs = db.query(ExceptionRecord).filter(
+                ExceptionRecord.batch_id == batch_run.id,
+                ExceptionRecord.severity == "CRITICAL",
+                ExceptionRecord.status.in_(["OPEN", "UNRESOLVED", "INVESTIGATING"])
+            ).all()
+            
+            for e in crit_excs:
+                e.human_approval_required = True
+                e.human_approval_status = "PENDING_OFFICER_REVIEW"
+                e.status = "INVESTIGATING"
+                db.add(AuditLog(
+                    id=f"aud_esc_{e.id}",
+                    batch_id=batch_run.id,
+                    exception_id=e.id,
+                    event_type="AGENTIC_ACTION_ESCALATE",
+                    decision="ESCALATED",
+                    evidence={"action": "ESCALATE_CRITICAL", "invoked_by": "Copilot Agent"},
+                    tools_called=["escalate_critical_exceptions"],
+                    action_taken=f"Copilot AI Agent escalated CRITICAL exception {e.id} to Mandatory Officer Review",
+                    user_id="Copilot AI Agent"
+                ))
+            
+            db.commit()
+            action_result = {
+                "action_executed": "ESCALATE_EXCEPTIONS",
+                "target": "CRITICAL_EXCEPTIONS",
+                "affected_count": len(crit_excs),
+                "status": "COMPLETED",
+                "message": f"Escalated {len(crit_excs)} critical exceptions for mandatory Finance Officer review."
+            }
+            tools_used.append({"tool": "escalate_exceptions", "count": len(crit_excs)})
+            citations.append("Action: Escalation Completed")
+
     # Check if user asks to investigate a specific transaction ID
     q_words = req.query.split()
     for word in q_words:
@@ -101,9 +182,14 @@ def query_copilot(req: CopilotQueryRequest, db: Session = Depends(get_db)):
     provider = get_llm_provider()
     answer = provider.query_copilot(user_query=req.query, context=context)
 
+    if action_result:
+        answer = f"⚡ **Agent Action Executed:** {action_result['message']}\n\n" + answer
+
     return CopilotQueryResponse(
         answer=answer,
         tools_used=tools_used,
         citations=citations,
-        metrics_context=context
+        metrics_context=context,
+        action_result=action_result
     )
+

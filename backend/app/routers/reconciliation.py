@@ -135,3 +135,174 @@ def get_batch_items(
         ))
 
     return items
+
+
+@router.get("/{batch_id}/journal-entries")
+def get_batch_journal_entries(batch_id: str, db: Session = Depends(get_db)):
+    """
+    Computes balanced double-entry General Ledger (GL) journal entries for the batch,
+    strictly enforcing: Total Debits == Total Credits.
+    """
+    batch_run = db.query(BatchRun).filter(BatchRun.id == batch_id).first()
+    if not batch_run:
+        raise HTTPException(status_code=404, detail="Batch run not found")
+
+    results = db.query(ReconciliationResult).filter(ReconciliationResult.batch_id == batch_id).all()
+
+    total_gross = 0.0
+    total_net_settled = 0.0
+    total_base_fee = 0.0
+    total_gst_tax = 0.0
+    total_refund = 0.0
+    total_discrepancy = 0.0
+
+    for r in results:
+        eq = r.financial_equation or {}
+        total_gross += float(eq.get("payment_amount", r.payment_amount or 0.0))
+        total_net_settled += float(eq.get("settlement_amount", r.settlement_amount or 0.0))
+        total_base_fee += float(eq.get("fee_amount", r.fee_amount or 0.0))
+        total_gst_tax += float(eq.get("tax_amount", 0.0))
+        total_refund += float(eq.get("refund_amount", r.refund_amount or 0.0))
+        total_discrepancy += float(eq.get("difference", r.difference or 0.0))
+
+    total_debits = round(total_net_settled + total_base_fee + total_gst_tax + total_refund + total_discrepancy, 2)
+    total_credits = round(total_gross, 2)
+
+    # Strict balance check
+    is_balanced = abs(total_debits - total_credits) < 0.05
+
+    journal_lines = [
+        {
+            "account_code": "1010",
+            "account_name": "Cash at Bank - Razorpay Settlement Nodal",
+            "type": "ASSET",
+            "debit": round(total_net_settled, 2),
+            "credit": 0.0,
+            "narration": f"Net merchant payout received for Batch {batch_id[:12]}"
+        },
+        {
+            "account_code": "5020",
+            "account_name": "Operating Expense - Gateway MDR Processing Fees",
+            "type": "EXPENSE",
+            "debit": round(total_base_fee, 2),
+            "credit": 0.0,
+            "narration": f"Base Merchant Discount Rate (MDR) processing costs"
+        },
+        {
+            "account_code": "1140",
+            "account_name": "Current Asset - GST Input Tax Credit (18% on MDR)",
+            "type": "ASSET",
+            "debit": round(total_gst_tax, 2),
+            "credit": 0.0,
+            "narration": f"Eligible GSTR-2B Input Tax Credit for gateway service invoice"
+        },
+        {
+            "account_code": "5030",
+            "account_name": "Sales Contra - Customer Refunds & Chargebacks",
+            "type": "CONTRA_REVENUE",
+            "debit": round(total_refund, 2),
+            "credit": 0.0,
+            "narration": f"Customer return credits & chargeback reversals processed"
+        }
+    ]
+
+    if total_discrepancy > 0:
+        journal_lines.append({
+            "account_code": "9999",
+            "account_name": "Suspense Clearing - Unreconciled Shortages / Dispute Exposure",
+            "type": "SUSPENSE",
+            "debit": round(total_discrepancy, 2),
+            "credit": 0.0,
+            "narration": f"At-risk exposure / unremitted gateway deductions awaiting bank dispute resolution"
+        })
+
+    journal_lines.append({
+        "account_code": "1200",
+        "account_name": "Accounts Receivable - Customer Payment Gateway Clearing",
+        "type": "ASSET",
+        "debit": 0.0,
+        "credit": total_credits,
+        "narration": f"Gross captured sales volume recognized for settlement batch {batch_id[:12]}"
+    })
+
+    posting_date = batch_run.started_at.strftime("%Y-%m-%d") if batch_run.started_at else "2026-09-04"
+
+    return {
+        "batch_id": batch_id,
+        "journal_id": f"JV-{batch_id[:8].upper()}",
+        "posting_date": posting_date,
+        "currency": "INR",
+        "total_debits": total_debits,
+        "total_credits": total_credits,
+        "is_balanced": is_balanced,
+        "variance": round(total_debits - total_credits, 2),
+        "lines": journal_lines,
+        "records_count": len(results),
+        "erp_compatible_formats": ["CSV (NetSuite/QuickBooks)", "JSON (SAP S/4HANA)", "Tally XML"]
+    }
+
+
+@router.get("/{batch_id}/export-gl")
+def export_gl(batch_id: str, format: str = "csv", db: Session = Depends(get_db)):
+    """
+    Exports double-entry General Ledger journal entries formatted for direct ERP upload (NetSuite, SAP, Tally).
+    """
+    from fastapi.responses import Response
+    import io
+    import csv
+
+    data = get_batch_journal_entries(batch_id=batch_id, db=db)
+
+    if format.lower() == "json":
+        import json
+        return Response(
+            content=json.dumps(data, indent=2),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="FINCTRL_GL_{batch_id[:8]}.json"'}
+        )
+
+    # Generate ERP-standard CSV
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+
+    # Standard NetSuite / QuickBooks CSV Header
+    writer.writerow([
+        "Journal_ID",
+        "Posting_Date",
+        "Account_Code",
+        "Account_Name",
+        "Account_Type",
+        "Debit_INR",
+        "Credit_INR",
+        "Currency",
+        "Line_Narration",
+        "Batch_Reference"
+    ])
+
+    for line in data["lines"]:
+        writer.writerow([
+            data["journal_id"],
+            data["posting_date"],
+            line["account_code"],
+            line["account_name"],
+            line["type"],
+            f"{line['debit']:.2f}",
+            f"{line['credit']:.2f}",
+            data["currency"],
+            line["narration"],
+            batch_id
+        ])
+
+    csv_content = buffer.getvalue()
+    buffer.close()
+
+    filename = f"FINCTRL_General_Ledger_{batch_id[:8]}.csv"
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition"
+        }
+    )
+

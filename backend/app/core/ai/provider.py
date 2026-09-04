@@ -275,9 +275,15 @@ class RuleEngineProvider(LLMProvider):
                 "You can ask me to list unresolved transactions, identify the highest discrepancy, investigate a specific transaction ID, or explain any financial concept!"
             )
 
-class GeminiProvider(LLMProvider):
+
+class GroqProvider(LLMProvider):
+    """
+    High-speed LLM provider powered by Groq (Llama 3.3 / 3.1).
+    Used as primary provider or high-speed fallback when Gemini free-tier quotas are exceeded.
+    """
     def __init__(self):
-        self.api_key = settings.GEMINI_API_KEY
+        self.api_key = settings.GROQ_API_KEY
+        self.model_name = settings.GROQ_MODEL_NAME or "llama-3.3-70b-versatile"
         self.fallback = RuleEngineProvider()
 
     def generate_investigation(
@@ -288,6 +294,87 @@ class GeminiProvider(LLMProvider):
     ) -> Dict[str, Any]:
         if not self.api_key:
             return self.fallback.generate_investigation(prompt, system_prompt, tools_data)
+
+        try:
+            import httpx
+            full_prompt = f"{prompt}\n\nTOOL RESULTS:\n{json.dumps(tools_data, indent=2)}"
+            payload = {
+                "model": self.model_name,
+                "messages": [
+                    {"role": "system", "content": system_prompt + "\nRespond strictly in valid JSON format."},
+                    {"role": "user", "content": full_prompt}
+                ],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.1
+            }
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            with httpx.Client(timeout=15.0) as client:
+                res = client.post("https://api.groq.com/openai/v1/chat/completions", json=payload, headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    content = data["choices"][0]["message"]["content"]
+                    return json.loads(content)
+                else:
+                    logger.warning(f"Groq API error {res.status_code}: {res.text}")
+                    return self.fallback.generate_investigation(prompt, system_prompt, tools_data)
+        except Exception as e:
+            logger.warning(f"Groq investigation failed ({e}), falling back to Rule Engine.")
+            return self.fallback.generate_investigation(prompt, system_prompt, tools_data)
+
+    def query_copilot(self, user_query: str, context: Dict[str, Any]) -> str:
+        if not self.api_key:
+            return self.fallback.query_copilot(user_query, context)
+
+        try:
+            import httpx
+            system_instruction = (
+                "You are FINCTRL Copilot, an expert AI Finance Controller for the Razorpay Buildathon. "
+                "You answer financial operations and reconciliation questions with precision, clean markdown tables, and bullet points. "
+                "Ground all answers in the provided live ledger context."
+            )
+            payload = {
+                "model": self.model_name,
+                "messages": [
+                    {"role": "system", "content": system_instruction},
+                    {"role": "user", "content": f"User Question: {user_query}\n\nLive Ledger Context Data:\n{json.dumps(context, indent=2)}"}
+                ],
+                "temperature": 0.2
+            }
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            with httpx.Client(timeout=15.0) as client:
+                res = client.post("https://api.groq.com/openai/v1/chat/completions", json=payload, headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    return data["choices"][0]["message"]["content"]
+                else:
+                    return self.fallback.query_copilot(user_query, context)
+        except Exception as e:
+            logger.warning(f"Groq copilot failed ({e}), falling back to Rule Engine.")
+            return self.fallback.query_copilot(user_query, context)
+
+
+class GeminiProvider(LLMProvider):
+    def __init__(self):
+        self.api_key = settings.GEMINI_API_KEY
+        self.groq_fallback = GroqProvider() if settings.GROQ_API_KEY else None
+        self.rule_fallback = RuleEngineProvider()
+
+    def generate_investigation(
+        self,
+        prompt: str,
+        system_prompt: str,
+        tools_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        if not self.api_key:
+            if self.groq_fallback:
+                return self.groq_fallback.generate_investigation(prompt, system_prompt, tools_data)
+            return self.rule_fallback.generate_investigation(prompt, system_prompt, tools_data)
         
         try:
             import google.generativeai as genai
@@ -303,12 +390,16 @@ class GeminiProvider(LLMProvider):
             )
             return json.loads(response.text)
         except Exception as e:
-            logger.warning(f"Gemini API call failed ({e}), using deterministic verification engine.")
-            return self.fallback.generate_investigation(prompt, system_prompt, tools_data)
+            logger.warning(f"Gemini API call failed ({e}). Cascading to secondary provider.")
+            if self.groq_fallback:
+                return self.groq_fallback.generate_investigation(prompt, system_prompt, tools_data)
+            return self.rule_fallback.generate_investigation(prompt, system_prompt, tools_data)
 
     def query_copilot(self, user_query: str, context: Dict[str, Any]) -> str:
         if not self.api_key:
-            return self.fallback.query_copilot(user_query, context)
+            if self.groq_fallback:
+                return self.groq_fallback.query_copilot(user_query, context)
+            return self.rule_fallback.query_copilot(user_query, context)
         try:
             import google.generativeai as genai
             genai.configure(api_key=self.api_key)
@@ -332,11 +423,19 @@ class GeminiProvider(LLMProvider):
             res = model.generate_content(prompt)
             return res.text
         except Exception as e:
-            logger.warning(f"Gemini copilot query failed: {e}")
-            return self.fallback.query_copilot(user_query, context)
+            logger.warning(f"Gemini copilot query failed: {e}. Cascading to secondary provider.")
+            if self.groq_fallback:
+                return self.groq_fallback.query_copilot(user_query, context)
+            return self.rule_fallback.query_copilot(user_query, context)
+
 
 def get_llm_provider() -> LLMProvider:
     provider_name = settings.LLM_PROVIDER.lower()
+    if provider_name == "groq" and settings.GROQ_API_KEY:
+        return GroqProvider()
     if provider_name == "gemini" and settings.GEMINI_API_KEY:
         return GeminiProvider()
+    if settings.GROQ_API_KEY:
+        return GroqProvider()
     return RuleEngineProvider()
+

@@ -1,29 +1,37 @@
 import React, { useState } from 'react';
-import { Bot, Send } from 'lucide-react';
+import { Bot, Send, Zap, ShieldAlert, CheckCircle2, ArrowRight } from 'lucide-react';
 import { apiService } from '../api/client';
 import { CopilotResponse } from '../types';
 
 interface CopilotProps {
   batchId?: string;
   datasetId?: string;
+  onNavigateToTab?: (tab: string) => void;
 }
 
-export const Copilot: React.FC<CopilotProps> = ({ batchId, datasetId }) => {
+export const Copilot: React.FC<CopilotProps> = ({ batchId, datasetId, onNavigateToTab }) => {
   const [query, setQuery] = useState('');
-  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string; tools?: any[]; citations?: string[] }>>([
+  const [messages, setMessages] = useState<Array<{
+    role: 'user' | 'assistant';
+    content: string;
+    tools?: any[];
+    citations?: string[];
+    action_result?: any;
+  }>>([
     {
       role: 'assistant',
       content:
-        'Hello! I am your FINCTRL Finance Copilot. I analyze actual reconciliation ledgers, quantify unresolved exposure, and investigate transaction discrepancies with verifiable evidence.',
+        'Hello! I am your FINCTRL Autonomous Finance Copilot. In addition to answering data queries with ledger evidence, I can execute agentic operations such as bulk approvals, exception escalations, and automated ledger adjustments.',
     },
   ]);
   const [loading, setLoading] = useState(false);
 
   const sampleQueries = [
+    'Approve all fee mismatches',
+    'Escalate all critical exceptions',
     'How much money is unresolved in this batch?',
-    'Show me the largest high-exposure exceptions.',
-    'How many settlements are delayed past SLA?',
-    'Explain why missing settlements remain unresolved.',
+    'Show me the largest high-exposure exceptions',
+    'Explain why missing settlements remain unresolved',
   ];
 
   const handleSend = async (textToSend?: string) => {
@@ -42,6 +50,7 @@ export const Copilot: React.FC<CopilotProps> = ({ batchId, datasetId }) => {
         content: res.answer,
         tools: res.tools_used,
         citations: res.citations,
+        action_result: res.action_result,
       };
       setMessages((prev) => [...prev, botMsg]);
     } catch (err) {
@@ -56,6 +65,7 @@ export const Copilot: React.FC<CopilotProps> = ({ batchId, datasetId }) => {
       setLoading(false);
     }
   };
+
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', height: 'calc(100vh - 140px)' }}>
@@ -144,8 +154,53 @@ export const Copilot: React.FC<CopilotProps> = ({ batchId, datasetId }) => {
                     boxShadow: 'var(--shadow-sm)',
                   }}
                 >
+                  {m.action_result && (
+                    <div
+                      style={{
+                        marginBottom: '12px',
+                        padding: '12px 14px',
+                        borderRadius: '8px',
+                        backgroundColor: '#ECFDF5',
+                        border: '1px solid #A7F3D0',
+                        color: '#065F46',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '13px' }}>
+                        <Zap size={16} color="#059669" />
+                        <span>Autonomous Action Executed: {m.action_result.action_executed}</span>
+                      </div>
+                      <div style={{ fontSize: '12.5px' }}>{m.action_result.message}</div>
+                      {onNavigateToTab && (
+                        <button
+                          onClick={() => onNavigateToTab('exceptions')}
+                          style={{
+                            alignSelf: 'flex-start',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            background: '#059669',
+                            color: '#FFFFFF',
+                            border: 'none',
+                            padding: '4px 10px',
+                            borderRadius: '4px',
+                            fontSize: '11.5px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            marginTop: '4px',
+                          }}
+                        >
+                          View Updated Exceptions
+                          <ArrowRight size={12} />
+                        </button>
+                      )}
+                    </div>
+                  )}
                   {m.content}
                 </div>
+
 
                 {/* Tool calls & citations badge */}
                 {m.citations && m.citations.length > 0 && (

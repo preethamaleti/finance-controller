@@ -9,7 +9,9 @@ import { Copilot } from './pages/Copilot';
 import { Evaluation } from './pages/Evaluation';
 import { CashPosition } from './pages/CashPosition';
 import { AuditTrail } from './pages/AuditTrail';
+import { MerchantsScorecard } from './pages/MerchantsScorecard';
 import { FindTheMoneyModal } from './components/ui/FindTheMoneyModal';
+
 import { ExplainMetricModal } from './components/ui/ExplainMetricModal';
 import { GenerateDatasetModal } from './components/ui/GenerateDatasetModal';
 import { apiService } from './api/client';
@@ -63,6 +65,11 @@ export function App() {
   useEffect(() => {
     loadDatasets();
     loadBatchData();
+    // Auto-refresh every 30 seconds to capture live Razorpay/webhook updates
+    const interval = setInterval(() => {
+      loadBatchData();
+    }, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleRunReconciliation = async () => {
@@ -142,6 +149,15 @@ export function App() {
             />
           )}
 
+          {currentTab === 'merchants' && (
+            <MerchantsScorecard
+              batchId={summary?.batch_id}
+              onNavigateToExceptions={(merchantName) => {
+                setCurrentTab('exceptions');
+              }}
+            />
+          )}
+
           {currentTab === 'exception-detail' && selectedExceptionId && (
             <ExceptionDetailView
               exceptionId={selectedExceptionId}
@@ -154,8 +170,10 @@ export function App() {
             <Copilot
               batchId={summary?.batch_id}
               datasetId={selectedDatasetId}
+              onNavigateToTab={(t) => setCurrentTab(t)}
             />
           )}
+
 
           {currentTab === 'evaluation' && (
             <Evaluation

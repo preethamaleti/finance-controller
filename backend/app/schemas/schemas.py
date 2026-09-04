@@ -84,6 +84,8 @@ class ExceptionItemResponse(BaseModel):
     status: str
     human_approval_required: bool
     human_approval_status: str
+    dispute_status: Optional[str] = "NOT_DISPUTED"
+    recovered_amount: Optional[Decimal] = Decimal("0.00")
     created_at: datetime
     has_investigation: bool
 
@@ -111,6 +113,17 @@ class HumanApprovalRequest(BaseModel):
     decision: str = Field(..., description="APPROVED or REJECTED")
     notes: Optional[str] = None
 
+class DisputeStatusUpdateRequest(BaseModel):
+    dispute_status: Optional[str] = None
+    status: Optional[str] = None
+    dispute_reference: Optional[str] = None
+    recovered_amount: Optional[Decimal] = Decimal("0.00")
+    notes: Optional[str] = None
+
+    def get_effective_status(self) -> str:
+        return self.dispute_status or self.status or "ESCALATED_TO_NODAL"
+
+
 # Copilot Schemas
 class CopilotQueryRequest(BaseModel):
     query: str
@@ -123,6 +136,8 @@ class CopilotQueryResponse(BaseModel):
     citations: List[str]
     metrics_context: Optional[Dict[str, Any]] = None
     structured_data: Optional[Any] = None
+    action_result: Optional[Dict[str, Any]] = None
+
 
 # Evaluation Schemas
 class EvaluationResponse(BaseModel):
@@ -181,6 +196,14 @@ class DashboardSummaryResponse(BaseModel):
     critical_exceptions_count: int
     status_counts: Dict[str, int]
     exposure_breakdown: FindTheMoneyResponse
+    # Enriched evaluation fields exposed to UI
+    match_accuracy: Optional[float] = None
+    total_volume: Optional[Decimal] = None
+    total_transactions: Optional[int] = None
+    f1_score: Optional[float] = None
+    false_resolution_rate: Optional[float] = None
+    exception_precision: Optional[float] = None
+    exception_recall: Optional[float] = None
 
 # Cash Position & Forecasting Schemas
 class CashPositionForecast(BaseModel):

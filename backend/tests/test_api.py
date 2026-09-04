@@ -58,3 +58,34 @@ def test_full_pipeline_api():
     cash_res = client.get(f"/api/cash/forecast?dataset_id={dataset_id}")
     assert cash_res.status_code == 200
     assert len(cash_res.json()["daily_forecast"]) == 30
+
+    # 9. Double-Entry General Ledger (GL) & ERP Journal Entries
+    gl_res = client.get(f"/api/reconciliation/{batch_id}/journal-entries")
+    assert gl_res.status_code == 200
+    gl_data = gl_res.json()
+    assert gl_data["is_balanced"] is True
+    assert gl_data["total_debits"] == gl_data["total_credits"]
+    assert len(gl_data["lines"]) >= 4
+    assert any(line["account_code"] == "1010" for line in gl_data["lines"])
+    assert any(line["account_code"] == "1200" for line in gl_data["lines"])
+
+    # 10. ERP GL CSV Export
+    csv_res = client.get(f"/api/reconciliation/{batch_id}/export-gl?format=csv")
+    assert csv_res.status_code == 200
+    assert "text/csv" in csv_res.headers["content-type"]
+    assert "Journal_ID,Posting_Date,Account_Code" in csv_res.text
+
+    # 11. Dispute Packet & Escalation Notice
+    disp_res = client.get(f"/api/exceptions/{first_exc['id']}/dispute-packet")
+    assert disp_res.status_code == 200
+    disp_data = disp_res.json()
+    assert "disputes@razorpay.com" in disp_data["recipient_email"]
+    assert len(disp_data["email_body"]) > 50
+    assert disp_data["disputed_exposure"] >= 0
+
+    # 12. Dispute Notice PDF Generation
+    pdf_res = client.get(f"/api/exceptions/{first_exc['id']}/dispute-pdf")
+    assert pdf_res.status_code == 200
+    assert pdf_res.headers["content-type"] == "application/pdf"
+    assert len(pdf_res.content) > 500
+

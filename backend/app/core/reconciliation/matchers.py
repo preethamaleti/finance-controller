@@ -80,12 +80,12 @@ class MultiSourceMatcher:
                 details={"strategy": "payment_reference matching"}
             )
 
-        # Level 3: Amount + Date Window (±7 days) for same merchant
+        # Level 3: Amount + Date Window (±3 days) for same merchant — tightened from 7 days for higher precision
         candidate_settlements = []
         for s in all_settlements:
             if s.merchant_id == payment.merchant_id:
                 date_diff = abs((s.settled_at - payment.timestamp).total_seconds()) / 86400.0
-                if date_diff <= 7.0:
+                if date_diff <= 3.0:
                     # check if gross or net matches within 1% or exact
                     if s.gross_amount == payment.amount or s.net_amount == payment.amount:
                         candidate_settlements.append((s, date_diff))
@@ -98,7 +98,7 @@ class MultiSourceMatcher:
             if best_settlement.bank_reference in bank_txns_by_ref:
                 matched_bank_txns.extend(bank_txns_by_ref[best_settlement.bank_reference])
 
-            confidence = max(0.80, 0.94 - (candidate_settlements[0][1] * 0.02))
+            confidence = max(0.80, 0.94 - (candidate_settlements[0][1] * 0.03))
             return MatchResult(
                 level="LEVEL_3_AMOUNT_DATE_WINDOW",
                 confidence=round(confidence, 4),
@@ -106,11 +106,34 @@ class MultiSourceMatcher:
                 matched_bank_txns=matched_bank_txns,
                 matched_refunds=matched_refunds,
                 matched_fees=matched_fees,
-                details={"strategy": "Amount match within 7-day settlement window"}
+                details={"strategy": "Amount match within 3-day settlement window"}
             )
 
+        # Level 3.5: Bank UTR cross-reference — bridge via bank transactions when ID-based matching failed
+        if payment.payment_reference and payment.payment_reference in bank_txns_by_pay_ref:
+            bridged_bank_txns = bank_txns_by_pay_ref[payment.payment_reference]
+            if bridged_bank_txns:
+                # Find settlement whose bank_reference matches one of these UTR-bridged bank txns
+                for bk in bridged_bank_txns:
+                    if bk.bank_reference and bk.bank_reference in bank_txns_by_ref:
+                        pass  # already have bank txn
+                    # Try matching settlement via bank UTR
+                    for s in all_settlements:
+                        if s.merchant_id == payment.merchant_id and s.bank_reference == bk.bank_reference:
+                            matched_settlements = [s]
+                            matched_bank_txns = [bk]
+                            return MatchResult(
+                                level="LEVEL_3_5_BANK_UTR_BRIDGE",
+                                confidence=0.88,
+                                matched_settlements=matched_settlements,
+                                matched_bank_txns=matched_bank_txns,
+                                matched_refunds=matched_refunds,
+                                matched_fees=matched_fees,
+                                details={"strategy": "Bank UTR payment_reference bridge"}
+                            )
+
         # Level 4: Composite Weighted Match
-        # (Amount similarity 40%, Date proximity 20%, Merchant 20%, Payment Method 20%)
+        # (Amount similarity 50%, Date proximity 30%, Payment Method similarity 20%)
         best_composite = None
         best_score = 0.0
         
@@ -128,7 +151,11 @@ class MultiSourceMatcher:
             else:
                 amt_score = 1.0 if amt_diff == 0 else 0.0
             
-            score = (amt_score * 0.40) + (date_score * 0.20) + (0.20) + (0.20)
+            # Payment method similarity bonus
+            method_score = 0.20 if (hasattr(s, 'payment_mode') and hasattr(payment, 'payment_method') 
+                                    and s.payment_mode == payment.payment_method) else 0.10
+            
+            score = (amt_score * 0.50) + (date_score * 0.30) + method_score
             if score > best_score and score >= 0.70:
                 best_score = score
                 best_composite = s

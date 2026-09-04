@@ -72,6 +72,9 @@ export interface ExceptionItem {
   status: string;
   human_approval_required: boolean;
   human_approval_status: string;
+  dispute_status?: string;
+  dispute_reference?: string;
+  recovered_amount?: number;
   created_at: string;
   has_investigation: boolean;
 }
@@ -136,6 +139,14 @@ export interface DashboardSummary {
   critical_exceptions_count: number;
   status_counts: Record<string, number>;
   exposure_breakdown: FindTheMoneyResponse;
+  // Evaluation-enriched
+  match_accuracy?: number;
+  total_volume?: number;
+  total_transactions?: number;
+  f1_score?: number;
+  false_resolution_rate?: number;
+  exception_precision?: number;
+  exception_recall?: number;
 }
 
 export interface EvaluationResult {
@@ -179,6 +190,82 @@ export interface CopilotResponse {
   tools_used: Array<Record<string, any>>;
   citations: string[];
   metrics_context?: Record<string, any>;
+  action_result?: {
+    action_executed: string;
+    target: string;
+    affected_count: number;
+    total_amount_approved?: number;
+    status: string;
+    message: string;
+  };
+}
+
+export interface LiveEvent {
+  id: string;
+  event: string;
+  transaction_id: string;
+  amount: number;
+  fee: number;
+  tax: number;
+  net_amount: number;
+  merchant_name: string;
+  status: string;
+  match_level: string;
+  confidence: number;
+  latency_ms: number;
+  details: string;
+  timestamp: string;
+}
+
+export interface MerchantScorecard {
+  merchant_id: string;
+  merchant_name: string;
+  category: string;
+  risk_level: string;
+  total_transactions: number;
+  gross_volume: number;
+  exceptions_count: number;
+  exception_rate_pct: number;
+  unresolved_exposure: number;
+  avg_settlement_sla_days: number;
+  rag_status: 'RED' | 'AMBER' | 'GREEN';
+  top_exception_types: string[];
+  compliance_score: number;
+}
+
+export interface MerchantsScorecardResponse {
+  summary: {
+    total_merchants: number;
+    high_risk_merchants_count: number;
+    avg_exception_rate: number;
+    total_merchant_exposure: number;
+  };
+  scorecards: MerchantScorecard[];
+}
+
+export interface SettlementAgingResponse {
+  summary: {
+    total_settled_count: number;
+    total_settled_volume: number;
+    sla_compliance_rate_pct: number;
+    sla_breach_volume: number;
+    sla_breach_count: number;
+  };
+  aging_distribution: Array<{
+    bracket: string;
+    count: number;
+    amount: number;
+    percentage: number;
+    sla_status: string;
+  }>;
+  method_breakdown: Array<{
+    payment_method: string;
+    settled_count: number;
+    total_amount: number;
+    avg_latency_days: number;
+    sla_compliance_pct: number;
+    breach_count: number;
+  }>;
 }
 
 export interface CashForecast {
@@ -221,3 +308,4 @@ export interface AuditLog {
   action_taken: string;
   timestamp: string;
 }
+

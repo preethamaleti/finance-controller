@@ -22,3 +22,18 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def run_migrations():
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        for col_def in [
+            "ALTER TABLE exceptions ADD COLUMN dispute_status VARCHAR(50) DEFAULT 'NOT_DISPUTED'",
+            "ALTER TABLE exceptions ADD COLUMN recovered_amount NUMERIC(15, 2) DEFAULT 0.00",
+            "ALTER TABLE exceptions ADD COLUMN dispute_reference VARCHAR(128)"
+        ]:
+            try:
+                conn.execute(text(col_def))
+                conn.commit()
+            except Exception:
+                pass
+

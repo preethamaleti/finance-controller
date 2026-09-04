@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.config import settings
-from app.database import engine, Base
+from app.database import engine, Base, run_migrations
 import app.models # Register all models
 
 from app.routers import (
@@ -16,15 +16,22 @@ from app.routers import (
     cash,
     audit,
     anomaly,
+    webhooks,
+    merchants,
+    rules,
+    tax,
 )
+
 
 # Ensure tables are created
 Base.metadata.create_all(bind=engine)
+run_migrations()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize DB tables
     Base.metadata.create_all(bind=engine)
+    run_migrations()
     yield
 
 app = FastAPI(
@@ -53,6 +60,12 @@ app.include_router(copilot.router, prefix=settings.API_V1_STR)
 app.include_router(cash.router, prefix=settings.API_V1_STR)
 app.include_router(audit.router, prefix=settings.API_V1_STR)
 app.include_router(anomaly.router, prefix=settings.API_V1_STR)
+app.include_router(webhooks.router, prefix=settings.API_V1_STR)
+app.include_router(merchants.router, prefix=settings.API_V1_STR)
+app.include_router(rules.router, prefix=settings.API_V1_STR)
+app.include_router(tax.router, prefix=settings.API_V1_STR)
+
+
 
 @app.get("/api/health")
 def health_check():

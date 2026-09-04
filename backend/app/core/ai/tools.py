@@ -7,10 +7,13 @@ from app.models.entities import (
 
 class FinanceInvestigationTools:
     @staticmethod
-    def search_payment(db: Session, transaction_id: str) -> Optional[Dict[str, Any]]:
-        payment = db.query(Payment).filter(
+    def search_payment(db: Session, transaction_id: str, dataset_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        q = db.query(Payment).filter(
             (Payment.transaction_id == transaction_id) | (Payment.id == transaction_id)
-        ).first()
+        )
+        if dataset_id:
+            q = q.filter(Payment.dataset_id == dataset_id)
+        payment = q.first()
         if not payment:
             return None
         return {
@@ -27,12 +30,15 @@ class FinanceInvestigationTools:
         }
 
     @staticmethod
-    def search_settlement(db: Session, transaction_id: str) -> List[Dict[str, Any]]:
-        settlements = db.query(Settlement).filter(
+    def search_settlement(db: Session, transaction_id: str, dataset_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        q = db.query(Settlement).filter(
             (Settlement.transaction_id == transaction_id) | 
             (Settlement.payment_id == transaction_id) |
-            (Settlement.settlement_reference.like(f"%{transaction_id}%"))
-        ).all()
+            (Settlement.settlement_reference == transaction_id)
+        )
+        if dataset_id:
+            q = q.filter(Settlement.dataset_id == dataset_id)
+        settlements = q.all()
         return [
             {
                 "id": s.id,
@@ -50,12 +56,15 @@ class FinanceInvestigationTools:
         ]
 
     @staticmethod
-    def search_bank(db: Session, reference: str) -> List[Dict[str, Any]]:
-        txns = db.query(BankTransaction).filter(
+    def search_bank(db: Session, reference: str, dataset_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        q = db.query(BankTransaction).filter(
             (BankTransaction.bank_reference == reference) |
             (BankTransaction.settlement_reference == reference) |
             (BankTransaction.payment_reference == reference)
-        ).all()
+        )
+        if dataset_id:
+            q = q.filter(BankTransaction.dataset_id == dataset_id)
+        txns = q.all()
         return [
             {
                 "id": b.id,
@@ -71,12 +80,15 @@ class FinanceInvestigationTools:
         ]
 
     @staticmethod
-    def search_refund(db: Session, transaction_id: str) -> List[Dict[str, Any]]:
-        refunds = db.query(Refund).filter(
+    def search_refund(db: Session, transaction_id: str, dataset_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        q = db.query(Refund).filter(
             (Refund.transaction_id == transaction_id) | 
             (Refund.payment_id == transaction_id) |
-            (Refund.refund_reference.like(f"%{transaction_id}%"))
-        ).all()
+            (Refund.refund_reference == transaction_id)
+        )
+        if dataset_id:
+            q = q.filter(Refund.dataset_id == dataset_id)
+        refunds = q.all()
         return [
             {
                 "id": r.id,
@@ -91,12 +103,15 @@ class FinanceInvestigationTools:
         ]
 
     @staticmethod
-    def search_fee(db: Session, transaction_id: str) -> List[Dict[str, Any]]:
-        fees = db.query(Fee).filter(
+    def search_fee(db: Session, transaction_id: str, dataset_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        q = db.query(Fee).filter(
             (Fee.transaction_id == transaction_id) | 
             (Fee.payment_id == transaction_id) |
-            (Fee.fee_reference.like(f"%{transaction_id}%"))
-        ).all()
+            (Fee.fee_reference == transaction_id)
+        )
+        if dataset_id:
+            q = q.filter(Fee.dataset_id == dataset_id)
+        fees = q.all()
         return [
             {
                 "id": f.id,
@@ -112,10 +127,13 @@ class FinanceInvestigationTools:
         ]
 
     @staticmethod
-    def search_invoice(db: Session, transaction_id: str) -> List[Dict[str, Any]]:
-        invoices = db.query(Invoice).filter(
-            (Invoice.payment_id == transaction_id) | (Invoice.invoice_number.like(f"%{transaction_id}%"))
-        ).all()
+    def search_invoice(db: Session, transaction_id: str, dataset_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        q = db.query(Invoice).filter(
+            (Invoice.payment_id == transaction_id) | (Invoice.invoice_number == transaction_id)
+        )
+        if dataset_id:
+            q = q.filter(Invoice.dataset_id == dataset_id)
+        invoices = q.all()
         return [
             {
                 "id": inv.id,
@@ -128,6 +146,7 @@ class FinanceInvestigationTools:
             }
             for inv in invoices
         ]
+
 
     @staticmethod
     def calculate_financial_difference(

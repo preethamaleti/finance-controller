@@ -168,7 +168,7 @@ Every KPI on the dashboard features a breakdown modal providing:
 ### Option 1: Run with Docker Compose (Recommended)
 ```bash
 # Clone the repository
-git clone https://github.com/your-repo/finance-controller.git
+git clone https://github.com/preethamaleti/finance-controller.git
 cd finance-controller
 
 # Launch backend and frontend
@@ -187,6 +187,9 @@ cd backend
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+
+# (Optional) Copy environment template - runs out-of-the-box with zero config!
+cp .env.example .env
 
 # Run initial seed and verification benchmark
 python seed.py --fresh

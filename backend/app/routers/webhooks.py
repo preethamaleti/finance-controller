@@ -108,6 +108,20 @@ async def handle_razorpay_webhook(
     if event_name == "payment.captured":
         payment_entity = event_payload.get("payment", {}).get("entity", {})
         txn_id = payment_entity.get("id") or f"pay_{uuid.uuid4().hex[:12]}"
+
+        # Razorpay delivers webhooks at least once, and /sync-live replays recent payments
+        # through this handler. Apply each Razorpay payment id once per dataset.
+        if payment_entity.get("id") and db.query(Payment).filter(
+            Payment.dataset_id == live_dataset.id, Payment.transaction_id == txn_id
+        ).first():
+            return {
+                "success": True,
+                "event": event_name,
+                "transaction_id": txn_id,
+                "reconciliation_status": "DUPLICATE_IGNORED",
+                "latency_ms": round((time.perf_counter() - start_t) * 1000, 2),
+                "signature_verified": is_valid or x_razorpay_signature is None
+            }
         # Razorpay amounts are in paise (1 INR = 100 paise)
         raw_amt = float(payment_entity.get("amount", 0))
         amount_inr = round(raw_amt / 100.0 if raw_amt > 1000 else raw_amt, 2)
